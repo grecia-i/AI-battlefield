@@ -1,6 +1,7 @@
 import pygame
 import re
 from settings import CELL_SIZE, SCREEN_HEIGHT, SCREEN_WIDTH, imgs
+import random
 
 ships = []
 
@@ -9,14 +10,17 @@ class Ships:
         self.length = length
         self.horizontal = horizontal
         self.img_original = img  # keep the original
-        self.image = self.orient_image(img)
+        self.image = self.orient_image()
         self.rect = self.image.get_rect(topleft=pos)
         self.dragging = False
         self.offset_x = 0
         self.offset_y = 0
         self.original_pos = pos
 
-    def orient_image(self, img):
+        self.grid_x = None
+        self.grid_y = None
+
+    def orient_image(self):
         if self.horizontal:
             return self.img_original
         else:
@@ -30,116 +34,150 @@ class Ships:
 
     def rotate(self):
         self.horizontal = not self.horizontal
-        self.image = self.orient_image(self.image)
-        self.rect = self.image.get_rect(topleft=self.rect.topleft)
+        # Save current top-left
+        current_pos = self.rect.topleft
+        self.image = self.orient_image()
+        self.rect = self.image.get_rect(topleft=current_pos)
 
+    def place_on_grid(self, grid_x, grid_y, board_offset_x, board_offset_y):
+        self.grid_x = grid_x
+        self.grid_y = grid_y
+        self.rect.x = board_offset_x + grid_x * CELL_SIZE
+        self.rect.y = board_offset_y + grid_y * CELL_SIZE
 
-def init_fleet():
+    @property
+    def grid_size(self):
+        """Return width, height in grid cells"""
+        return (self.length, 1) if self.horizontal else (1, self.length)
+
+def init_fleet(board=None):
     ships.clear()
-    spacing_x = 20
+    spacing_x = 50
 
-    # Divide ships into two rows
-    ship_items = [
-        (name, img)
+    # DIVIDES INTO TWO ROWS FOR AI_VS_AI
+    ship_items = [ (name, img)
         for name, img in imgs.items()
         if re.match(r'[A-Za-z]*([0-9]+)$', name)
     ]
     half = (len(ship_items) + 1) // 2
 
-    # First row
-    current_x = 50
-    current_y = SCREEN_HEIGHT - 150
+    # TOP ROW
+    current_x = 100
+    current_y = SCREEN_HEIGHT - 200
     for name, img in ship_items[:half]:
         length = int(re.match(r'[A-Za-z]*([0-9]+)$', name).group(1))
         ship = Ships(img, (current_x, current_y), length)
+        ship.name = name  
         ships.append(ship)
         current_x += CELL_SIZE * length + spacing_x
 
-    # Second row
-    current_x = 50
-    current_y = SCREEN_HEIGHT - 80
+    # BOTTOM ROW
+    current_x = 100
+    current_y = SCREEN_HEIGHT - 160
     for name, img in ship_items[half:]:
         length = int(re.match(r'[A-Za-z]*([0-9]+)$', name).group(1))
         ship = Ships(img, (current_x, current_y), length)
+        ship.name = name 
         ships.append(ship)
         current_x += CELL_SIZE * length + spacing_x
+    # COLOCA LOS BARCOS EN EL GRID
+    if board:
+        place_ai_fleet(board)
 
 
-def ship_events(ships, event, board, board_offset_x, board_offset_y):
+## ESTA ES PROVISIONAL OBVIO solo fue para probar 
+def place_ai_fleet(board):
+    ship_lengths = [2, 3, 3, 4, 5] 
+    for length in ship_lengths:
+        placed = False
+        while not placed:
+            horizontal = random.choice([True, False])
+            if horizontal:
+                x = random.randint(0, board.size - length)
+                y = random.randint(0, board.size - 1)
+            else:
+                x = random.randint(0, board.size - 1)
+                y = random.randint(0, board.size - length)
+            
+            # CELLS ARE FREE
+            overlap = False
+            for i in range(length):
+                xi = x + i if horizontal else x
+                yi = y if horizontal else y + i
+                if board.grid[yi][xi] == 'S':
+                    overlap = True
+                    break
+            
+            if not overlap:
+                # MARKS SHIPS ONLY LOGICALLY (NO DRAWING)
+                for i in range(length):
+                    xi = x + i if horizontal else x
+                    yi = y if horizontal else y + i
+                    board.grid[yi][xi] = 'S'
+                placed = True
+
+def ship_events(screen, ships, event, board, board_offset_x, board_offset_y):
+    # SHIP INTERACTION MOSTLY FOR PLAYER
     mouse_pos = pygame.mouse.get_pos()
-    '''
-    mouse_pos = pygame.mouse.get_pos()
-    cx = x-imgs["mouse"].get_width() // 2
-    cy = y-imgs["mouse"].get_height() // 2
-    screen.blit(imgs["mouse"], (cx,cy))
     hovering_any = False
-    '''
-    for ship in reversed(ships):  # check topmost first
-        # Hover cursor
-        if ship.rect.collidepoint(mouse_pos):
+
+    for ship in reversed(ships):  # topmost first
+        ship_rect = ship.rect
+
+        # HOVER CURSOR
+        if ship_rect.collidepoint(mouse_pos):
             pygame.mouse.set_cursor(pygame.SYSTEM_CURSOR_HAND)
             hovering_any = True
 
-            # Start dragging
+            # STARTS DRAGGING
             if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
                 ship.dragging = True
-                ship.offset_x = ship.rect.x - mouse_pos[0]
-                ship.offset_y = ship.rect.y - mouse_pos[1]
-                ship.drag_start = mouse_pos
-                # bring to top
-                ships.remove(ship)
-                ships.append(ship)
-                break
+                ship.offset_x = ship_rect.x - mouse_pos[0]
+                ship.offset_y = ship_rect.y - mouse_pos[1]
 
-            # Rotate on right click
+            # RIGHT CLICK ROTATES THE SHIP
             if event.type == pygame.MOUSEBUTTONDOWN and event.button == 3:
                 ship.rotate()
-                break
 
-        # Release
+        # DROPS THE SHIP
         if event.type == pygame.MOUSEBUTTONUP and event.button == 1 and ship.dragging:
             ship.dragging = False
-            dx = abs(event.pos[0] - ship.drag_start[0])
-            dy = abs(event.pos[1] - ship.drag_start[1])
 
-            # If it was a click (not drag), rotate
-            if dx < 5 and dy < 5:
-                ship.rotate()
-                break
+            # ACCOMODATES IT TO THE GRID
+            grid_x = (ship.rect.x - board_offset_x + CELL_SIZE//2) // CELL_SIZE
+            grid_y = (ship.rect.y - board_offset_y + CELL_SIZE//2) // CELL_SIZE
 
-            # Snap to grid
-            grid_x = (ship.rect.x - board_offset_x + CELL_SIZE // 2) // CELL_SIZE
-            grid_y = (ship.rect.y - board_offset_y + CELL_SIZE // 2) // CELL_SIZE
+            w, h = ship.grid_size
 
-            grid_x = max(0, min(10 - (ship.length if ship.horizontal else 1), grid_x))
-            grid_y = max(0, min(10 - (1 if ship.horizontal else ship.length), grid_y))
+            # CHECKS IF WITHIN BOUNDARIES
+            if grid_x < 0 or grid_y < 0 or grid_x + w > 10 or grid_y + h > 10:
+                ship.reset_position()
+                continue
 
-            # collision
-            ship_cells = [(grid_x + i, grid_y) if ship.horizontal else (grid_x, grid_y + i) for i in range(ship.length)]
+            # CHECKS COLLISIONS 
             collision = False
             for other in ships:
                 if other == ship:
                     continue
-                other_cells = [
-                    ((other.rect.x - board_offset_x) // CELL_SIZE + i, (other.rect.y - board_offset_y) // CELL_SIZE)
-                    if other.horizontal else
-                    ((other.rect.x - board_offset_x) // CELL_SIZE, (other.rect.y - board_offset_y) // CELL_SIZE + i)
-                    for i in range(other.length)
-                ]
+                ox, oy = (other.rect.x - board_offset_x)//CELL_SIZE, (other.rect.y - board_offset_y)//CELL_SIZE
+                ow, oh = other.grid_size
+                other_cells = [(ox + i, oy + j) for i in range(ow) for j in range(oh)]
+                ship_cells = [(grid_x + i, grid_y + j) for i in range(w) for j in range(h)]
                 if any(cell in other_cells for cell in ship_cells):
                     collision = True
                     break
 
-            if not collision:
-                ship.rect.x = board_offset_x + grid_x * CELL_SIZE
-                ship.rect.y = board_offset_y + grid_y * CELL_SIZE
-            else:
+            if collision:
                 ship.reset_position()
+            else:
+                ship.rect.topleft = (board_offset_x + grid_x*CELL_SIZE,
+                                     board_offset_y + grid_y*CELL_SIZE)
 
-        # Dragging movement
+        # WHILE DRAGGING
         elif event.type == pygame.MOUSEMOTION and ship.dragging:
             ship.rect.x = mouse_pos[0] + ship.offset_x
             ship.rect.y = mouse_pos[1] + ship.offset_y
 
+    # RESET CURSOR IF NOT HOVERING THIS WAS FOR SPRITES BUT DIDNT WORK
     if not hovering_any:
         pygame.mouse.set_cursor(pygame.SYSTEM_CURSOR_ARROW)
