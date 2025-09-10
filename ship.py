@@ -2,6 +2,7 @@ import pygame
 import re
 from settings import CELL_SIZE, SCREEN_HEIGHT, SCREEN_WIDTH, imgs
 import random
+from types import SimpleNamespace
 
 ships = []
 
@@ -9,7 +10,11 @@ class Ships:
     def __init__(self, img, pos, length, horizontal=True):
         self.length = length
         self.horizontal = horizontal
-        self.img_original = img  # keep the original
+        if img is None:
+            self.img_original = pygame.Surface((CELL_SIZE*length, CELL_SIZE))
+            self.img_original.fill((100,100,100))  # color gris
+        else:
+            self.img_original = img  # keep the original
         self.image = self.orient_image()
         self.rect = self.image.get_rect(topleft=pos)
         self.dragging = False
@@ -51,7 +56,6 @@ class Ships:
         return (self.length, 1) if self.horizontal else (1, self.length)
 
 def init_fleet(board=None):
-    ships.clear()
     spacing_x = 50
 
     # DIVIDES INTO TWO ROWS FOR AI_VS_AI
@@ -80,16 +84,17 @@ def init_fleet(board=None):
         ship.name = name 
         ships.append(ship)
         current_x += CELL_SIZE * length + spacing_x
-    # COLOCA LOS BARCOS EN EL GRID
     if board:
         place_ai_fleet(board)
 
 
-## ESTA ES PROVISIONAL OBVIO solo fue para probar 
+
 def place_ai_fleet(board):
-    ship_lengths = [2, 3, 3, 4, 5] 
+    ship_lengths = [2, 3, 3, 4, 5]
+
     for length in ship_lengths:
         placed = False
+        attempts = 0
         while not placed:
             horizontal = random.choice([True, False])
             if horizontal:
@@ -98,23 +103,17 @@ def place_ai_fleet(board):
             else:
                 x = random.randint(0, board.size - 1)
                 y = random.randint(0, board.size - length)
-            
-            # CELLS ARE FREE
-            overlap = False
-            for i in range(length):
-                xi = x + i if horizontal else x
-                yi = y if horizontal else y + i
-                if board.grid[yi][xi] == 'S':
-                    overlap = True
-                    break
-            
-            if not overlap:
-                # MARKS SHIPS ONLY LOGICALLY (NO DRAWING)
-                for i in range(length):
-                    xi = x + i if horizontal else x
-                    yi = y if horizontal else y + i
-                    board.grid[yi][xi] = 'S'
+
+            # dummy con solo lo necesario para place_ship
+            dummy = SimpleNamespace(length=length, horizontal=horizontal)
+
+            if board.place_ship(dummy, x, y):
                 placed = True
+
+            attempts += 1
+            if attempts > 1000:
+                raise RuntimeError(f"Failed to place AI ship length {length} after 1000 attempts.")
+
 
 def ship_events(screen, ships, event, board, board_offset_x, board_offset_y):
     # SHIP INTERACTION MOSTLY FOR PLAYER

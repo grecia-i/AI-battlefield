@@ -89,21 +89,34 @@ class Board:
         self.grid = [[' ' for _ in range(self.size)] for _ in range(self.size)]
 
     # PLACES THE SHIP ON THE GRID
-    def place_ship(self, ship, grid_x, grid_y):
+    def place_ship(self, ship, x, y):
         cells = []
+
         for i in range(ship.length):
-            if ship.horizontal:
-                x, y = grid_x + i, grid_y
-            else:
-                x, y = grid_x, grid_y + i
+            xi = x + i if ship.horizontal else x
+            yi = y if ship.horizontal else y + i
 
-            if not (0 <= x < self.size and 0 <= y < self.size):
-                return False  # OUT OF BOUNDS
-            if self.grid[y][x] == 'S':
-                return False  # OVERLAPPING
-            cells.append((x, y))
+            # LIMITS
+            if not (0 <= xi < self.size and 0 <= yi < self.size):
+                return False
 
-        for x, y in cells:
-            self.grid[y][x] = 'S'
+            # OVERLAP
+            if self.grid[yi][xi] == 'ship':
+                return False
+
+            cells.append((xi, yi))
+
+        for xi, yi in cells:
+            self.grid[yi][xi] = 'S'
+
         return True
+    
+    # TO CHECK IF THE SHOT IS VALID (NEITHER HIT NOR MISS)
+    def valid_shots(self):
+        valid = []
+        for r in range(self.size):
+            for c in range(self.size):
+                if self.grid[r][c] not in ('H', 'M'):  
+                    valid.append((r, c))
+        return valid
     
